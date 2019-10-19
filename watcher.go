@@ -304,6 +304,17 @@ func (w *Watcher) listRecursive(name string) (map[string]os.FileInfo, error) {
 	fileList := make(map[string]os.FileInfo)
 
 	return fileList, filepath.Walk(name, func(path string, info os.FileInfo, err error) error {
+		// skip no permission dir or file
+		//var ep *os.PathError
+		//if err != nil && errors.As(err, &ep) && ep.Err == syscall.EACCES {
+		//	fmt.Printf("watcher: listRecursive: ignore no permission file: %s\n", ep.Path)
+		//	return nil
+		//}
+		if err != nil && os.IsPermission(err) {
+			fmt.Printf("watcher: listRecursive: ignore no permission file: %s\n", path)
+			return nil
+		}
+
 		if err != nil {
 			return err
 		}
