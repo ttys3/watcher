@@ -311,7 +311,7 @@ func (w *Watcher) listRecursive(name string) (map[string]os.FileInfo, error) {
 		//	return nil
 		//}
 		if err != nil && os.IsPermission(err) {
-			fmt.Printf("watcher: listRecursive: ignore no permission file: %s\n", path)
+			//fmt.Printf("watcher: listRecursive: ignore no permission file: %s\n", path)
 			return nil
 		}
 
