@@ -231,7 +231,6 @@ func TestWatcherNoPermSubDir(t *testing.T) {
 			}
 			//time.Sleep(time.Millisecond * 10)
 		}
-		log.Printf("end the event loop")
 	}()
 
 	err := w.AddRecursive(rootDirectory)
