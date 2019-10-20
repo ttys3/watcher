@@ -1,35 +1,47 @@
 package watcher
 
 import (
+	"log"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
 
-func TestWatcher(t *testing.T) {
+func TestDirCreate(t *testing.T) {
 	rootDirectory := "/tmp/watcher-test"
 	os.RemoveAll(rootDirectory)
 	os.Mkdir(rootDirectory, os.ModePerm)
 
+	var numEvtExpected = 10
+	var numEvt = 0
+
+	var wg sync.WaitGroup
 	var isClosedCorrectly = false
-	t.Logf("init the watcher")
+	log.Printf("init the watcher")
 	// adds a watcher w which watches files change
 	w := New()
 	w.FilterOps(Rename, Move, Create, Remove, Write)
 
+	wg.Add(1)
 	// in case of file change assign new index
 	go func() {
-		t.Logf("start the event loop")
+		log.Printf("start the event loop")
+		defer func() {
+			log.Printf("end the event loop")
+			wg.Done()
+		}()
 		for {
 			select {
 			//rename sub dir (dir WRITE) = event MOVE all sub dir files
 			case event := <-w.Event:
-				t.Logf("event: %#v", event)
+				numEvt++
+				log.Printf("event: %#v", event)
 			case e := <-w.Error:
 				t.Fatalf("err: %#v", e)
 				return
 			case <-w.Closed:
-				t.Logf("Recieved from w.Closed: watcher closed ============>")
+				log.Printf("recv from w.Closed: watcher closed ============>")
 				isClosedCorrectly = true
 				return
 			}
@@ -41,116 +53,144 @@ func TestWatcher(t *testing.T) {
 	if err != nil && err != os.ErrPermission && err != os.ErrNotExist && err != os.ErrInvalid {
 		if e, ok := err.(*os.PathError); ok {
 			//add this path to ignore
-			t.Logf("watcher: os.PathError: %#v", e)
-			t.Logf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
+			log.Printf("watcher: os.PathError: %#v", e)
+			log.Printf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
 		} else {
-			t.Logf("failed to add %s to the watcher, err: %s", rootDirectory, err.Error())
+			log.Printf("failed to add %s to the watcher, err: %s", rootDirectory, err.Error())
 		}
 	} else {
-		t.Logf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
+		log.Printf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
 	}
 
 	go func() {
 		w.Wait()
 		time.Sleep(time.Second * 3)
+		log.Printf("mkdir abc/def/ghi")
 		os.MkdirAll(rootDirectory+"/abc/def/ghi", os.ModePerm)
 		time.Sleep(time.Second)
+
+		log.Printf("remove dir abc/def/ghi")
 		os.Remove(rootDirectory + "/abc/def/ghi")
 		time.Sleep(time.Second)
+
+		log.Printf("remove dir abc/def")
 		os.Remove(rootDirectory + "/abc/def")
 		time.Sleep(time.Second)
+
+		log.Printf("remove dir abc")
 		os.Remove(rootDirectory + "/abc")
 
 		time.Sleep(time.Second * 1)
-		t.Logf("before w.Close()")
 		// exit the test
 		w.Close()
-		t.Logf("after w.Close()")
+		log.Printf("w.Close() called")
 	}()
 
 	// time.Millisecond * 100
 	// blocks until all operation has been successfully
-	err = w.Start(time.Second * 3)
+	err = w.Start(time.Second * 1)
 	if err != nil {
-		t.Logf("watcher exited with error: %s", err)
+		log.Printf("watcher exited with error: %s", err)
 	} else {
-		t.Logf("watcher exited with no error")
+		log.Printf("watcher exited with no error")
 	}
 	// wait recv from w.Closed channel
-	time.Sleep(time.Millisecond * 200)
+	wg.Wait()
 
 	if !isClosedCorrectly {
 		t.Fail()
 	}
+
+	if numEvtExpected != numEvt {
+		t.Fail()
+	}
 }
 
-func TestWatcher_StartLongIntervalChRecv(t *testing.T) {
+func TestStartLongIntervalChRecv(t *testing.T) {
 	rootDirectory := "/tmp/watcher-test-long-interval"
 	os.RemoveAll(rootDirectory)
 	os.Mkdir(rootDirectory, os.ModePerm)
 
+	var numEvtExpected = 4
+	var numEvt = 0
+
+	var wg sync.WaitGroup
 	var isClosedCorrectly = false
-	t.Logf("init the watcher")
+	log.Printf("init the watcher")
 	// adds a watcher w which watches files change
 	w := New()
 	w.FilterOps(Rename, Move, Create, Remove, Write)
 
+	wg.Add(1)
 	// in case of file change assign new index
 	go func() {
-		t.Logf("start the event loop")
+		log.Printf("start the event loop")
+		defer func() {
+			log.Printf("end the event loop")
+			wg.Done()
+		}()
 		for {
 			select {
 			//rename sub dir (dir WRITE) = event MOVE all sub dir files
 			case event := <-w.Event:
-				t.Logf("event: %#v", event)
+				numEvt++
+				log.Printf("event: %#v", event)
 			case e := <-w.Error:
-				t.Errorf("err: %#v", e)
+				log.Printf("err: %#v", e)
 				return
 			case <-w.Closed:
-				t.Logf("Recieved from w.Closed: watcher closed ============>")
+				log.Printf("recv from w.Closed: watcher closed ============>")
 				isClosedCorrectly = true
 				return
 			}
-			//time.Sleep(time.Millisecond * 10)
+			time.Sleep(time.Millisecond * 10)
 		}
-		t.Logf("end the event loop")
 	}()
 
 	err := w.AddRecursive(rootDirectory)
 	if err != nil && err != os.ErrPermission && err != os.ErrNotExist && err != os.ErrInvalid {
 		if e, ok := err.(*os.PathError); ok {
 			//add this path to ignore
-			t.Errorf("watcher: os.PathError: %#v", e)
-			t.Logf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
+			log.Printf("watcher: os.PathError: %#v", e)
+			log.Printf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
 		} else {
 			t.Errorf("failed to add %s to the watcher, err: %s", rootDirectory, err.Error())
 		}
 	} else {
-		t.Logf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
+		log.Printf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
 	}
 
 	go func() {
 		w.Wait()
 
-		time.Sleep(time.Millisecond * 3000)
-		t.Logf("before w.Close()")
+		time.Sleep(time.Second * 1)
+		os.MkdirAll(rootDirectory+"/abc/def/ghi", os.ModePerm)
+		log.Printf("dir created")
+
+		wt := time.Second * 12
+		log.Printf("wait for %s and close the watcher", wt)
+		time.Sleep(wt)
 		// exit the test
 		w.Close()
-		t.Logf("after w.Close()")
+		log.Printf("w.Close() called")
 	}()
 
 	// use a very long duration here to test recv from w.Closed
 	// blocks until all operation has been successfully
-	err = w.Start(time.Second * 3600)
+	err = w.Start(time.Second * 10)
 	if err != nil {
-		t.Logf("watcher exited with error: %s", err)
+		log.Printf("watcher exited with error: %s", err)
 	} else {
-		t.Logf("watcher exited with no error")
+		log.Printf("watcher exited with no error")
 	}
 	// wait recv from w.Closed channel
-	time.Sleep(time.Millisecond * 200)
+	wg.Wait()
 
 	if !isClosedCorrectly {
+		t.Fail()
+	}
+
+	if numEvtExpected != numEvt {
 		t.Fail()
 	}
 }
@@ -161,31 +201,37 @@ func TestWatcherNoPermSubDir(t *testing.T) {
 	rootDirectory := "/tmp/watcher-test-no-perm"
 	os.Mkdir(rootDirectory, os.ModePerm)
 
+	var wg sync.WaitGroup
 	var isClosedCorrectly = false
-	t.Logf("init the watcher")
+	log.Printf("init the watcher")
 	// adds a watcher w which watches files change
 	w := New()
 	w.FilterOps(Rename, Move, Create, Remove, Write)
 
+	wg.Add(1)
 	// in case of file change assign new index
 	go func() {
-		t.Logf("start the event loop")
+		log.Printf("start the event loop")
+		defer func() {
+			log.Printf("end the event loop")
+			wg.Done()
+		}()
 		for {
 			select {
 			//rename sub dir (dir WRITE) = event MOVE all sub dir files
 			case event := <-w.Event:
-				t.Logf("event: %#v", event)
+				log.Printf("event: %#v", event)
 			case e := <-w.Error:
 				t.Errorf("err: %#v", e)
 				return
 			case <-w.Closed:
-				t.Logf("Recieved from w.Closed: watcher closed ============>")
+				log.Printf("recv from w.Closed: watcher closed ============>")
 				isClosedCorrectly = true
 				return
 			}
 			//time.Sleep(time.Millisecond * 10)
 		}
-		t.Logf("end the event loop")
+		log.Printf("end the event loop")
 	}()
 
 	err := w.AddRecursive(rootDirectory)
@@ -193,29 +239,31 @@ func TestWatcherNoPermSubDir(t *testing.T) {
 		t.Errorf("failed to add %s to the watcher, err: %s", rootDirectory, err.Error())
 		t.FailNow()
 	} else {
-		t.Logf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
+		log.Printf("successfully added %s to the watcher, waiting for event ...", rootDirectory)
 	}
 
 	go func() {
 		w.Wait()
 
 		time.Sleep(time.Millisecond * 8000)
-		t.Logf("before w.Close()")
+		log.Printf("before w.Close()")
 		// exit the test
 		w.Close()
-		t.Logf("after w.Close()")
+		log.Printf("after w.Close()")
 	}()
 
 	// use a very long duration here to test recv from w.Closed
 	// blocks until all operation has been successfully
 	err = w.Start(time.Second * 2)
 	if err != nil {
-		t.Logf("watcher exited with error: %s", err)
+		log.Printf("watcher exited with error: %s", err)
+		// fail if no perm error
+		t.FailNow()
 	} else {
-		t.Logf("watcher exited with no error")
+		log.Printf("watcher exited with no error")
 	}
 	// wait recv from w.Closed channel
-	time.Sleep(time.Millisecond * 200)
+	wg.Wait()
 
 	if !isClosedCorrectly {
 		t.Fail()
